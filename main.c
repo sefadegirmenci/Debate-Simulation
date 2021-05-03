@@ -9,6 +9,7 @@
 
 #define SUCCESS 0 
 #define FAIL -1
+#define DISCORD_NOTIFY 0                // To speed up the program, make this 0 to disable notifications
 
 /*Condition Variables*/
 pthread_cond_t ready_cond;              // Make sure every commentator is waiting for a question
@@ -44,6 +45,11 @@ int total_breaking_news=0;              // Total time spent on breaking news
 */
 int discord_log(char *message)
 {
+    if(DISCORD_NOTIFY!=1)
+    {
+        return 0;
+    }
+
     int my_pid = fork();
     if(my_pid<0)
     {
@@ -167,7 +173,7 @@ void *moderator()
             pthread_cond_wait(&ready_cond, &question_mutex);
         }
         /*Part A : Ask a question*/
-        char question_state[30];
+        char question_state[64];
         sprintf(question_state, "%s Moderator asked Question %d",timeStamp(),i+1);
         discord_log(question_state);
         printf("%s\n",question_state);
@@ -390,7 +396,7 @@ int main(int argc, char *argv[])
     for (int i = 0; i < commentator_count + 2; i++)
     {
         if (i == commentator_count+1)
-        {
+        {   
             if (pthread_create(&th[i], NULL, &moderator, NULL) != 0)
             {
                 printf("Error creating moderator \n");
@@ -452,52 +458,47 @@ int main(int argc, char *argv[])
     pthread_cond_destroy(&commentator_finished);
     pthread_mutex_destroy(&question_mutex);
 
+    /*
+        1- Change file descriptor from STD_OUT to a file
+        2- Call statistics() function (statistics will be written into the file)
+        3- In the parent, open this file, get the statistics
+        4- Send this statistics to the discord webhook
+    */
     pid_t my_pid = fork();
     if(my_pid ==0)
     {
-        pid_t my_pid_2=fork();    
-        if(my_pid_2<0)
-        {
-            printf("Error fork\n");
-        }
-        else if(my_pid_2 == 0)
-        {
-            int execResult=open("execvResult.txt",O_WRONLY | O_CREAT,0777);
-			if(execResult==-1) printf("Error opening file");
-			dup2(execResult,STDOUT_FILENO);
-            close(execResult);
-            getStatistics();
+        int execResult=open("execvResult.txt",O_WRONLY | O_CREAT | O_TRUNC,0777);
+		if(execResult==-1) printf("Error opening file");
+		dup2(execResult,STDOUT_FILENO);
+        close(execResult);
+        getStatistics();
             
-        }
-        else
-        {
-            wait(NULL);
-            char read_output[1024];	
-            char notification_output[2056];
-			FILE *fp=fopen("execvResult.txt","rt");
-			if(fp==NULL) printf("Error opening file");
-
-			while(fgets(read_output, sizeof(read_output), fp))
-            {
-                strcat(notification_output,read_output);
-            }
-
-            execlp("apprise","-vv","-t","Program Stats","-b",notification_output+50,"discord://832961346240905276/fCUiUpYy8RMSXBJVmoQPwzCS64ZntPVnvbTdfzADH2yLwlplmuIK--3IfSVBPIwycOCT/",NULL);
-            printf("Error\n");
-        }
     }
     else if(my_pid>0)
     {
+
         wait(NULL);
-        
-        getStatistics();
+        char read_output[1024];	
+        char notification_output[2056];
+		FILE *fp=fopen("execvResult.txt","rt");
+		if(fp==NULL) printf("Error opening file");
+
+		while(fgets(read_output, sizeof(read_output), fp))
+        {
+            strcat(notification_output,read_output);
+        }
+        // Send statistics as a discord notification
+        fclose(fp);
+        discord_log(notification_output+50);
+
 
     }
     else
     {
         printf("Error fork\n");
     }
-    
+        //Print statistics on the terminal
+        getStatistics();
 
 
     free(th);
