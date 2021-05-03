@@ -458,7 +458,8 @@ int main(int argc, char *argv[])
     pthread_cond_destroy(&commentator_finished);
     pthread_mutex_destroy(&question_mutex);
 
-    /*
+
+      /*
         1- Change file descriptor from STD_OUT to a file
         2- Call statistics() function (statistics will be written into the file)
         3- In the parent, open this file, get the statistics
@@ -467,38 +468,49 @@ int main(int argc, char *argv[])
     pid_t my_pid = fork();
     if(my_pid ==0)
     {
-        int execResult=open("execvResult.txt",O_WRONLY | O_CREAT | O_TRUNC,0777);
-		if(execResult==-1) printf("Error opening file");
-		dup2(execResult,STDOUT_FILENO);
-        close(execResult);
-        getStatistics();
+        pid_t my_pid_2=fork();    
+        if(my_pid_2<0)
+        {
+            printf("Error fork\n");
+        }
+        else if(my_pid_2 == 0)
+        {
+            int execResult=open("execvResult.txt",O_WRONLY | O_CREAT,0777);
+			if(execResult==-1) printf("Error opening file");
+			dup2(execResult,STDOUT_FILENO);
+            close(execResult);
+            getStatistics();
             
+        }
+        else
+        {
+            wait(NULL);
+            char read_output[1024];	
+            char notification_output[2056];
+			FILE *fp=fopen("execvResult.txt","rt");
+			if(fp==NULL) printf("Error opening file");
+
+			while(fgets(read_output, sizeof(read_output), fp))
+            {
+                strcat(notification_output,read_output);
+            }
+
+            execlp("apprise","-vv","-t","\n","-b",notification_output+50,"discord://832961346240905276/fCUiUpYy8RMSXBJVmoQPwzCS64ZntPVnvbTdfzADH2yLwlplmuIK--3IfSVBPIwycOCT/",NULL);
+            printf("Error\n");
+        }
     }
     else if(my_pid>0)
     {
-
         wait(NULL);
-        char read_output[1024];	
-        char notification_output[2056];
-		FILE *fp=fopen("execvResult.txt","rt");
-		if(fp==NULL) printf("Error opening file");
-
-		while(fgets(read_output, sizeof(read_output), fp))
-        {
-            strcat(notification_output,read_output);
-        }
-        // Send statistics as a discord notification
-        fclose(fp);
-        discord_log(notification_output+50);
-
+        
+        getStatistics();
 
     }
     else
     {
         printf("Error fork\n");
     }
-        //Print statistics on the terminal
-        getStatistics();
+    
 
 
     free(th);
