@@ -9,7 +9,9 @@
 
 #define SUCCESS 0 
 #define FAIL -1
-#define DISCORD_NOTIFY 1                // To speed up the program, make this 0 to disable notifications
+#define DISCORD_NOTIFY 0                // To speed up the program, make this 0 to disable notifications
+
+/*TO DO LIST : Wait function'ı timedwait ile değiştir*/
 
 /*Condition Variables*/
 pthread_cond_t ready_cond;              // Make sure every commentator is waiting for a question
@@ -66,6 +68,30 @@ int discord_log(char *message)
         wait(NULL);
         return SUCCESS;
     }
+}
+
+void swap(int *x,int *y)
+{
+    int temp = *x;
+    *x = *y;
+    *y = temp;
+}
+
+/*Selection sort*/
+void sortArray(int arr[])
+{
+    int i, j, min;
+ 
+    for (i = 0; i < commentator_count - 1; i++) {
+ 
+        min = i;
+        for (j = i + 1; j < commentator_count; j++)
+            if (arr[j] < arr[min])
+                min = j;
+ 
+        swap(&arr[min], &arr[i]);
+    }
+
 }
 
 
@@ -187,7 +213,8 @@ void *moderator()
         }
         thinking_finished_count=0;
 
-        /*Send */
+        /* Give turns to commentators and wait them to finish */
+        /* If buffer_count <=0, either all commentators finished or no request has been made */
         while(buffer_count>0)
         {
             pthread_cond_signal(&your_turn);
@@ -287,44 +314,111 @@ void getStatistics()
     printf("\n-----------------------------------------");
 	printf("\n         Simulation Statistics");
 	printf("\n-----------------------------------------\n\n");
-    int sum,diff,variance=0;
-    float mean,standart_deviation=0;
+    int sum=0;
+    float mean,median=0;
     int min = time_sum[0];
-    int min_index=1;
     int max = time_sum[0];
-    int max_index=1;
+    int min_index=0;
+    int max_index=0;
     for(int i = 0 ;i< commentator_count;i++)
     {
         sum+=time_sum[i];
         if(time_sum[i]<min)
         {
             min = time_sum[i];
-            min_index=i+1;
+            min_index=i;
         }
         if(time_sum[i]>max)
         {
             max=time_sum[i];
-            max_index=i+1;
+            max_index=i;
         }
-        printf("Commentator %d have spoken %d seconds\n",i+1,time_sum[i]);
+        printf("Commentator %d have spoken %d seconds\n",i,time_sum[i]);
     }
     mean= (float)sum/commentator_count;
-    int temp_sum=0;
-    for(int i=0; i<commentator_count; i++)
+    
+    sortArray(time_sum);
+    median = time_sum[commentator_count/2];
+
+    /*Boxplot approach to analyze the distribution of time periods*/
+    int first_quartile = time_sum[commentator_count/4];
+    printf("First Quartile is %d \n",first_quartile);
+    int third_quartile = time_sum[commentator_count*3/4];
+    printf("Third quartile is %d \n",third_quartile);
+    float inter_qr = third_quartile - first_quartile;
+    float offset = 3.0/2*inter_qr;
+    float upper_bound = third_quartile + offset; 
+    printf("Upper bound is %f\n",upper_bound);
+    float lower_bound = first_quartile - offset;
+    printf("Lower bound is %f \n",lower_bound);
+    int outlier_count = 0;
+
+    int fairness=1;
+    /*Determine outliers*/
+    for(int i = 0 ; i< commentator_count;i++)
     {
-     diff = time_sum[i] - mean;
-     temp_sum += pow(diff,2);
+        int value = time_sum[i];
+        if(value < lower_bound) outlier_count++;
+        if(value > upper_bound) outlier_count++;
     }
-    variance = temp_sum/commentator_count;
-    standart_deviation=sqrt(variance);
-    printf("Standart deviation : %f                 \n",standart_deviation);
+    if(outlier_count>0)
+    {
+        fairness=0;
+    }
+    /*The divergence between first and third quartile*/
+    /*Only 25%*probability is allowed for this program, exceeding implies the program was not fair*/
+    float max_bound = time_bound * commentator_count * probability/100;
+    float allowed_ceil = (float)max_bound /4;
+
+    int inclined_to_median,inclined_to_quartile=0; 
+    for(int i = commentator_count/4+1;i<commentator_count/2;i++)
+    {
+        int value = time_sum[i];
+        if(median - value < value-first_quartile)
+        {
+            inclined_to_median++;
+        }
+        else
+        {
+            inclined_to_quartile++;
+        }
+    }
+    inclined_to_quartile = ((commentator_count<=4) ||(inclined_to_median<inclined_to_quartile)) ? 1:0;
+    for(int i = commentator_count/2+1 ; i<commentator_count*3/4;i++)
+    {
+        int value = time_sum[i];
+        if(value - median < third_quartile-value)
+        {
+            inclined_to_median++;
+        }
+        else
+        {
+            inclined_to_quartile++;
+        } 
+    }
+    inclined_to_quartile = ((inclined_to_quartile) || (inclined_to_median<inclined_to_quartile)) ? 1:0;
+    printf("Allowed ceil is %f \n",allowed_ceil);
+    printf("Inclination is %d\n",inclined_to_quartile);
+
+    if((third_quartile-first_quartile > allowed_ceil )|| (first_quartile-min >= (min)-lower_bound || max-third_quartile>=upper_bound-max) )
+    {
+        if (third_quartile-first_quartile > allowed_ceil)printf("That was not fair because third_quartile-first_quartile > allowed ceil\n");
+        if(first_quartile-min >= (min)-lower_bound) printf("Minimum is close to lower edge\n");
+        if(max-third_quartile>=upper_bound-max) printf("Maximum is close to upper edge\n");
+        fairness=0;
+    }
+
+   
     printf("Mean : %f                               \n",mean);
+    printf("Median is : %f                               \n",median);
+    printf("Outlier number is : %d                               \n",outlier_count);
     printf("Minimum: Commentator %d with %d seconds \n",min_index,min);
     printf("Maximum: Commentator %d with %d seconds \n",max_index,max);
     printf("Total time spent : %s                   \n",timeStamp());
     printf("Total time spent on breaking news : %d                   \n",total_breaking_news);
 
-    if(standart_deviation>((float)time_bound*2.0/10))
+
+    if(fairness ==0)
     {
         printf("That was not a fair program\n");
     }
@@ -337,6 +431,8 @@ void getStatistics()
 
 int main(int argc, char *argv[])
 {
+    srand(time(NULL));
+
     char start_log[32];
     sprintf(start_log,"Program is starting!");
     discord_log(start_log);
@@ -348,23 +444,23 @@ int main(int argc, char *argv[])
             char *param = argv[i];
             if(strcmp(param,"-p")==0)
             {
-                probability = atof(argv[i+1])*100;
+                probability = (rand()%30+30)*1.0;
             }
             if(strcmp(param,"-q")==0)
             {
-                question_count = atoi(argv[i+1]);
+                question_count = rand()%7 +1;
             }
             if(strcmp(param,"-n")==0)
             {
-                commentator_count = atoi(argv[i+1]);
+                commentator_count = rand()%7+1;
             }
             if(strcmp(param,"-t")==0)
             {
-                time_bound = atoi(argv[i+1]);
+                time_bound = rand()%10+2;
             }
             if(strcmp(param,"-b")==0)
             {
-                breaking_probability = atof(argv[i+1])*100;
+                breaking_probability = 0;
             }
 
         }
@@ -377,7 +473,6 @@ int main(int argc, char *argv[])
     time_sum = malloc(sizeof(int)*commentator_count);
     time_as_string=malloc(sizeof(char)*15);
 
-    srand(time(NULL));
     /*Mutex,cond etc. initialize et*/
     pthread_cond_init(&questionAsked, NULL);
     pthread_cond_init(&ready_cond, NULL);
