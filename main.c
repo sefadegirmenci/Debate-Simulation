@@ -6,6 +6,8 @@
 #include <time.h>
 #include <string.h>
 #include <math.h>
+#include <fcntl.h>
+#include <sys/stat.h>
 
 #define SUCCESS 0 
 #define FAIL -1
@@ -444,23 +446,23 @@ int main(int argc, char *argv[])
             char *param = argv[i];
             if(strcmp(param,"-p")==0)
             {
-                probability = (rand()%30+30)*1.0;
+                probability = atof(argv[i+1])*100;
             }
             if(strcmp(param,"-q")==0)
             {
-                question_count = rand()%7 +1;
+                question_count = atoi(argv[i+1]);
             }
             if(strcmp(param,"-n")==0)
             {
-                commentator_count = rand()%7+1;
+                commentator_count = atoi(argv[i+1]);
             }
             if(strcmp(param,"-t")==0)
             {
-                time_bound = rand()%10+2;
+                time_bound = atoi(argv[i+1]);
             }
             if(strcmp(param,"-b")==0)
             {
-                breaking_probability = 0;
+                breaking_probability = atof(argv[i+1])*100;
             }
 
         }
