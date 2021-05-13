@@ -5,7 +5,7 @@ CC_C=gcc
 all: clean $(TARGETS)
 
 $(TARGETS):
-	$(CC_C) $(CFLAGS) $@.c -o $@
+	$(CC_C) $(CFLAGS) $@.c -o $@ -pthread -lpthread
 
 clean:
 	rm -f $(TARGETS) execvResult.txt
