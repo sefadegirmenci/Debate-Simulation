@@ -55,10 +55,10 @@ int
 pthread_sleep(double seconds){
     pthread_mutex_t mutex;
     pthread_cond_t conditionvar;
-    if(pthread_mutex_init(&mutex,NULL)){
+    if(pthread_mutex_init(&mutex,NULL)!=0){
         return -1;
     }
-    if(pthread_cond_init(&conditionvar,NULL)){
+    if(pthread_cond_init(&conditionvar,NULL)!=0){
         return -1;
     }
 
@@ -214,7 +214,7 @@ void *breakingNews()
                 char breaking[64];
                 sprintf(breaking, "%s Breaking news!",timeStamp());
                 discord_log(breaking);
-                sleep(5);
+                pthread_sleep(5);
                 current_time+=5;
                 printf("%s Breaking news ends.\n",timeStamp());
                 sprintf(breaking, "%s Breaking news ends!",timeStamp());
@@ -580,7 +580,7 @@ int main(int argc, char *argv[])
             break;
         }
         pthread_mutex_unlock(&question_mutex);
-        sleep(1);
+        pthread_sleep(1);
     }
     
 
