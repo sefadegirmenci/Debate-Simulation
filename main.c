@@ -8,11 +8,11 @@
 #include <math.h>
 #include <fcntl.h>
 #include <sys/stat.h>
+#include <sys/time.h>
 
 #define SUCCESS 0 
 #define FAIL -1
 #define DISCORD_NOTIFY 0                // To speed up the program, make this 0 to disable notifications
-
 /*TO DO LIST : Wait function'ı timedwait ile değiştir*/
 
 /*Condition Variables*/
@@ -28,21 +28,68 @@ pthread_cond_t breaking_news_handle;    // To cut short commentator
 pthread_mutex_t question_mutex;         // General mutex to provide mutual exclusion -- Two commentator should not speak at the same time
 
 /*           Inputs          */
-int question_count,time_bound,commentator_count;
-float probability,breaking_probability;
+int question_count,commentator_count;
+double probability,breaking_probability,time_bound;
 
 int ready_count = 0;                    // To release questions, wait for every commentator
 int thinking_finished_count=0;          // After releasing the question, commentators decide whether comment or not
 int buffer_count=0;                     // Number of elements in the request queue
-int current_time=0;                     // Time counter
+double current_time=0;                  // Time counter
 char *time_as_string;                   // To print time stamp
 
 int questions_finished=0;               // Boolean variable to cancel breaking news thread 
 int currently_speaking=0;               // 1 if there is a commentator speaking, to make sure breaking news does not come when no one comments
 
-int *buffer;                            // Request queue
-int *time_sum;                          // Commentators speaking time array i.e. time_sum[0] is the total speaking time of the first commentator
+float *buffer;                         // Request queue
+float *time_sum;                        // Commentators speaking time array i.e. time_sum[0] is the total speaking time of the first commentator
 int total_breaking_news=0;              // Total time spent on breaking news
+
+
+/**
+ * pthread_sleep takes an integer number of seconds to pause the current thread
+ * original by Yingwu Zhu
+ * updated by Muhammed Nufail Farooqi
+ * updated by Fahrican Kosar
+ */
+int
+pthread_sleep(double seconds){
+    pthread_mutex_t mutex;
+    pthread_cond_t conditionvar;
+    if(pthread_mutex_init(&mutex,NULL)){
+        return -1;
+    }
+    if(pthread_cond_init(&conditionvar,NULL)){
+        return -1;
+    }
+
+    struct timeval tp;
+    struct timespec timetoexpire;
+    // When to expire is an absolute time, so get the current time and add
+    // it to our delay time
+    gettimeofday(&tp, NULL);
+    long new_nsec = tp.tv_usec * 1000 + (seconds - (long)seconds) * 1e9;
+    timetoexpire.tv_sec = tp.tv_sec + (long)seconds + (new_nsec / (long)1e9);
+    timetoexpire.tv_nsec = new_nsec % (long)1e9;
+
+    pthread_mutex_lock(&mutex);
+    int res = pthread_cond_timedwait(&conditionvar, &mutex, &timetoexpire);
+    pthread_mutex_unlock(&mutex);
+    pthread_mutex_destroy(&mutex);
+    pthread_cond_destroy(&conditionvar);
+
+    //Upon successful completion, a value of zero shall be returned
+    return res;
+}
+
+/*
+    Obtained and modified from @Wim stackoverflow
+*/
+float RandomFloat(float lower_bound, float upper_bound) {
+    float random = ((float) rand()) / (float) RAND_MAX;
+    float diff = upper_bound - lower_bound;
+    float r = random * diff;
+    return lower_bound + r;
+}
 
 /*
   Log every update on the discord webhook
@@ -72,7 +119,7 @@ int discord_log(char *message)
     }
 }
 
-void swap(int *x,int *y)
+void swap(float *x,float *y)
 {
     int temp = *x;
     *x = *y;
@@ -80,7 +127,7 @@ void swap(int *x,int *y)
 }
 
 /*Selection sort*/
-void sortArray(int arr[])
+void sortArray(float arr[])
 {
     int i, j, min;
  
@@ -100,17 +147,19 @@ void sortArray(int arr[])
 /*Generate neat formatted time stamp i.e. [00:02]*/
 char* timeStamp()
 {
-    int minute = current_time /60 ;
-    int seconds = current_time%60;
+    int minute = (int)current_time /60 ;
+    int seconds = (int)current_time%60;
+    double miliseconds= current_time - (int)(current_time);
+    int miliseconds_format= (int)(miliseconds*1000);
     if(minute==0)
     {
         if(seconds<10)
         {
-            snprintf(time_as_string, sizeof time_as_string, "[00:0%d]", seconds);
+            sprintf(time_as_string, "[00:0%d:%d]", seconds,miliseconds_format);
         }
         else
         {
-            snprintf(time_as_string, sizeof time_as_string, "[00:%d]", seconds);
+            sprintf(time_as_string, "[00:%d:%d]", seconds,miliseconds_format);
         }
     }
     else
@@ -119,22 +168,22 @@ char* timeStamp()
         {
             if(seconds<10)
             {
-                snprintf(time_as_string, sizeof time_as_string, "[0%d:0%d]",minute, seconds);
+                sprintf(time_as_string, "[0%d:0%d:%d]",minute, seconds,miliseconds_format);
             }
             else
             {
-                snprintf(time_as_string, sizeof time_as_string, "[0%d:%d]",minute, seconds);
+                sprintf(time_as_string, "[0%d:%d:%d]",minute, seconds,miliseconds_format);
             }
         }
         else
         {
             if(seconds<10)
             {
-                snprintf(time_as_string, sizeof time_as_string, "[%d:0%d]",minute, seconds);
+                sprintf(time_as_string, "[%d:0%d:%d]",minute, seconds,miliseconds_format);
             }
             else
             {
-                snprintf(time_as_string, sizeof time_as_string, "[%d:%d]",minute, seconds);
+                sprintf(time_as_string, "[%d:%d:%d]",minute, seconds,miliseconds_format);
             }
         }
 
@@ -162,7 +211,7 @@ void *breakingNews()
             {
                 total_breaking_news+=5;
                 printf("%s Breaking news!\n",timeStamp());
-                char breaking[30];
+                char breaking[64];
                 sprintf(breaking, "%s Breaking news!",timeStamp());
                 discord_log(breaking);
                 sleep(5);
@@ -170,7 +219,6 @@ void *breakingNews()
                 printf("%s Breaking news ends.\n",timeStamp());
                 sprintf(breaking, "%s Breaking news ends!",timeStamp());
                 discord_log(breaking);
-
                 /*When there is a breaking news, make sure no new question asked by sending signal not in the commentator but after the breaking news*/
                 buffer_count--;
                 pthread_cond_signal(&commentator_finished); 
@@ -237,7 +285,7 @@ void *commentator(void *args)
     int index = *(int*)args; 
     
 
-    int sum_talk=0;
+    float sum_talk=0;
     char commentator_status[128];
     for(int i=0;i<question_count;i++)
     {
@@ -261,7 +309,8 @@ void *commentator(void *args)
             printf("%s\n",commentator_status);
             /*Send a request to the global queue*/
             buffer_index=buffer_count;
-            buffer[buffer_count++]=(rand() % time_bound)+1;
+            float time = RandomFloat(1.0,time_bound);
+            buffer[buffer_count++]= time;
             sum_talk+=buffer[buffer_count-1];
         }
         thinking_finished_count++;
@@ -274,12 +323,11 @@ void *commentator(void *args)
             static struct timespec time_to_wait = {0, 0};
             /*When moderator gives the turn, speak for t seconds*/
             pthread_cond_wait(&your_turn,&question_mutex);
-
-            sprintf(commentator_status,"%s Commentator #%d's turn to speak for %d seconds ",timeStamp(),index,buffer[buffer_index]);
+            sprintf(commentator_status,"%s Commentator #%d's turn to speak for %0.3f seconds ",timeStamp(),index,buffer[buffer_index]);
             discord_log(commentator_status);
             printf("%s\n",commentator_status);
-            long sleep_time = buffer[buffer_index];
 
+            double sleep_time = buffer[buffer_index];
             long initial_time= time(NULL);
             time_to_wait.tv_sec = initial_time + sleep_time;
             currently_speaking=1;
@@ -316,10 +364,10 @@ void getStatistics()
     printf("\n-----------------------------------------");
 	printf("\n         Simulation Statistics");
 	printf("\n-----------------------------------------\n\n");
-    int sum=0;
+    float sum=0;
     float mean,median=0;
-    int min = time_sum[0];
-    int max = time_sum[0];
+    float min = time_sum[0];
+    float max = time_sum[0];
     int min_index=0;
     int max_index=0;
     for(int i = 0 ;i< commentator_count;i++)
@@ -335,7 +383,7 @@ void getStatistics()
             max=time_sum[i];
             max_index=i;
         }
-        printf("Commentator %d have spoken %d seconds\n",i,time_sum[i]);
+        printf("Commentator %d have spoken %f seconds\n",i,time_sum[i]);
     }
     mean= (float)sum/commentator_count;
     
@@ -414,8 +462,8 @@ void getStatistics()
     printf("Mean : %f                               \n",mean);
     printf("Median is : %f                               \n",median);
     printf("Outlier number is : %d                               \n",outlier_count);
-    printf("Minimum: Commentator %d with %d seconds \n",min_index,min);
-    printf("Maximum: Commentator %d with %d seconds \n",max_index,max);
+    printf("Minimum: Commentator %d with %f seconds \n",min_index,min);
+    printf("Maximum: Commentator %d with %f seconds \n",max_index,max);
     printf("Total time spent : %s                   \n",timeStamp());
     printf("Total time spent on breaking news : %d                   \n",total_breaking_news);
 
@@ -434,7 +482,6 @@ void getStatistics()
 int main(int argc, char *argv[])
 {
     srand(time(NULL));
-
     char start_log[32];
     sprintf(start_log,"Program is starting!");
     discord_log(start_log);
@@ -458,7 +505,7 @@ int main(int argc, char *argv[])
             }
             if(strcmp(param,"-t")==0)
             {
-                time_bound = atoi(argv[i+1]);
+                time_bound = atof(argv[i+1]);
             }
             if(strcmp(param,"-b")==0)
             {
