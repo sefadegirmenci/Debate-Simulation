@@ -40,7 +40,7 @@ char *time_as_string;                   // To print time stamp
 int questions_finished=0;               // Boolean variable to cancel breaking news thread 
 int currently_speaking=0;               // 1 if there is a commentator speaking, to make sure breaking news does not come when no one comments
 
-float *buffer;                         // Request queue
+float *buffer;                          // Request queue
 float *time_sum;                        // Commentators speaking time array i.e. time_sum[0] is the total speaking time of the first commentator
 int total_breaking_news=0;              // Total time spent on breaking news
 
@@ -392,15 +392,11 @@ void getStatistics()
 
     /*Boxplot approach to analyze the distribution of time periods*/
     int first_quartile = time_sum[commentator_count/4];
-    printf("First Quartile is %d \n",first_quartile);
     int third_quartile = time_sum[commentator_count*3/4];
-    printf("Third quartile is %d \n",third_quartile);
     float inter_qr = third_quartile - first_quartile;
     float offset = 3.0/2*inter_qr;
     float upper_bound = third_quartile + offset; 
-    printf("Upper bound is %f\n",upper_bound);
     float lower_bound = first_quartile - offset;
-    printf("Lower bound is %f \n",lower_bound);
     int outlier_count = 0;
 
     int fairness=1;
@@ -447,14 +443,9 @@ void getStatistics()
         } 
     }
     inclined_to_quartile = ((inclined_to_quartile) || (inclined_to_median<inclined_to_quartile)) ? 1:0;
-    printf("Allowed ceil is %f \n",allowed_ceil);
-    printf("Inclination is %d\n",inclined_to_quartile);
 
     if((third_quartile-first_quartile > allowed_ceil )|| (first_quartile-min >= (min)-lower_bound || max-third_quartile>=upper_bound-max) )
     {
-        if (third_quartile-first_quartile > allowed_ceil)printf("That was not fair because third_quartile-first_quartile > allowed ceil\n");
-        if(first_quartile-min >= (min)-lower_bound) printf("Minimum is close to lower edge\n");
-        if(max-third_quartile>=upper_bound-max) printf("Maximum is close to upper edge\n");
         fairness=0;
     }
 
@@ -567,7 +558,6 @@ int main(int argc, char *argv[])
 
      while(1)
     {
-        pthread_mutex_lock(&question_mutex);
         int prob = rand()%100 < breaking_probability;
         if(prob && currently_speaking)
         {
@@ -576,10 +566,8 @@ int main(int argc, char *argv[])
         
         if(questions_finished)
         {
-            pthread_mutex_unlock(&question_mutex);
             break;
         }
-        pthread_mutex_unlock(&question_mutex);
         pthread_sleep(1);
     }
     
